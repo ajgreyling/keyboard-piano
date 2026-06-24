@@ -1,6 +1,10 @@
 (function () {
   var AudioContextCtor = window.AudioContext || window.webkitAudioContext;
   var SEMITONE = Math.pow(2, 1 / 12);
+  var DOWN1 = Math.pow(2, -1 / 12);
+  var DOWN2 = Math.pow(2, -2 / 12);
+  var UP1 = Math.pow(2, 1 / 12);
+  var UP2 = Math.pow(2, 2 / 12);
 
   var audio = null;
   var master = null;
@@ -30,15 +34,22 @@
 
   var notes = [
     { key: "A", code: 65, note: "C3", color: "#ffadad", sample: "C3", rate: 1 },
-    { key: "S", code: 83, note: "D3", color: "#ffd6a5", sample: "Ds3", rate: SEMITONE * -1 },
-    { key: "D", code: 68, note: "E3", color: "#fdffb6", sample: "Fs3", rate: SEMITONE * -2 },
-    { key: "F", code: 70, note: "G3", color: "#caffbf", sample: "Fs3", rate: SEMITONE },
+    { key: "S", code: 83, note: "D3", color: "#ffd6a5", sample: "Ds3", rate: DOWN1 },
+    { key: "D", code: 68, note: "E3", color: "#fdffb6", sample: "Fs3", rate: DOWN2 },
+    { key: "F", code: 70, note: "G3", color: "#caffbf", sample: "Fs3", rate: UP1 },
     { key: "G", code: 71, note: "A3", color: "#9bf6ff", sample: "A3", rate: 1 },
     { key: "H", code: 72, note: "C4", color: "#a0c4ff", sample: "C4", rate: 1 },
-    { key: "J", code: 74, note: "D4", color: "#bdb2ff", sample: "Ds4", rate: SEMITONE * -1 },
-    { key: "K", code: 75, note: "E4", color: "#ffc6ff", sample: "Fs4", rate: SEMITONE * -2 },
-    { key: "L", code: 76, note: "G4", color: "#f4d35e", sample: "Fs4", rate: SEMITONE },
+    { key: "J", code: 74, note: "D4", color: "#bdb2ff", sample: "Ds4", rate: DOWN1 },
+    { key: "K", code: 75, note: "E4", color: "#ffc6ff", sample: "Fs4", rate: DOWN2 },
+    { key: "L", code: 76, note: "G4", color: "#f4d35e", sample: "Fs4", rate: UP1 },
     { key: ";", code: 186, note: "A4", color: "#ee964b", sample: "A4", rate: 1 }
+  ];
+
+  var touchOnlyNotes = [
+    { key: "", code: 300, note: "F3", sample: "Fs3", rate: DOWN1 },
+    { key: "", code: 301, note: "B3", sample: "A3", rate: UP2 },
+    { key: "", code: 302, note: "F4", sample: "Fs4", rate: DOWN1 },
+    { key: "", code: 303, note: "B4", sample: "A4", rate: UP2 }
   ];
 
   var touchNotes = {};
@@ -196,7 +207,9 @@
       className += " key-playable";
       button.id = "pad-" + noteItem.code;
       button.setAttribute("data-code", String(noteItem.code));
-      button.setAttribute("aria-label", "Play " + noteItem.note + " with key " + noteItem.key);
+      button.setAttribute("aria-label", noteItem.key ?
+        ("Play " + noteItem.note + " with key " + noteItem.key) :
+        ("Play " + noteItem.note));
     } else {
       className += " key-muted";
       button.disabled = true;
@@ -221,6 +234,11 @@
     for (i = 0; i < notes.length; i += 1) {
       if (notes[i].note === name) {
         return notes[i];
+      }
+    }
+    for (i = 0; i < touchOnlyNotes.length; i += 1) {
+      if (touchOnlyNotes[i].note === name) {
+        return touchOnlyNotes[i];
       }
     }
     return null;
@@ -683,7 +701,7 @@
     }
 
     sourceNode.buffer = buffer;
-    sourceNode.playbackRate.value = item.rate;
+    sourceNode.playbackRate.value = Math.max(0.25, item.rate);
 
     filter.type = "lowpass";
     filter.frequency.value = warmthCutoff();
