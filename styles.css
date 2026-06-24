@@ -176,6 +176,10 @@ h2 {
   transition: transform 90ms linear, box-shadow 90ms linear;
 }
 
+.pad.is-leading {
+  box-shadow: inset 0 -10px 0 rgba(0, 0, 0, 0.13), 0 0 0 3px rgba(255, 209, 102, 0.95), 0 12px 28px rgba(0, 0, 0, 0.25);
+}
+
 .pad.is-active {
   transform: translateY(6px) scale(0.98);
   box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.15), 0 5px 16px rgba(0, 0, 0, 0.2);

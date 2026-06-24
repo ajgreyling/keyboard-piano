@@ -25,8 +25,7 @@
   var jamNextBeat = 0;
   var jamBeat = 0;
   var jamTimer = null;
-  var jamTempo = 68;
-  var lastUserTime = 0;
+  var jamTempo = 72;
 
   var notes = [
     { key: "A", code: 65, note: "C3", color: "#ffadad", sample: "C3", rate: 1 },
@@ -100,7 +99,7 @@
           samplesReady = failed < sampleFiles.length;
 
           if (samplesReady) {
-            setStatus("Grand piano ready. Press Start, then A S D F G H J K L ;.");
+            setStatus("Grand piano ready. Press Start, then any key to steer the jam.");
           } else {
             setStatus("Could not load piano samples. Check your connection and refresh.");
             startButton.disabled = true;
@@ -173,11 +172,11 @@
       }
 
       ensureAudio();
-      playNote(notes[5], 0.92, "user");
-      if (jamOn) {
-        startJam();
-      }
-      setStatus("Piano is awake. Play keys or tap pads. Jam mode follows your lead.");
+      jamOn = true;
+      jamRoot = 5;
+      updateJamButton();
+      startJam();
+      setStatus("Jam is playing around C4. Press any key to steer a new direction.");
     };
 
     jamButton.onclick = function () {
@@ -187,23 +186,25 @@
 
       ensureAudio();
       jamOn = !jamOn;
-      jamButton.className = jamOn ? "secondary-button is-on" : "secondary-button";
-      jamButton.innerHTML = "";
-      jamButton.appendChild(document.createTextNode(jamOn ? "Jam on" : "Jam off"));
+      updateJamButton();
 
       if (jamOn) {
-        startJam();
-        setStatus("Jam is on. Your notes steer the music.");
+        ensureJamRunning();
+        setStatus("Jam is playing. Press any key to steer a new direction.");
       } else {
         stopJam();
-        setStatus("Jam paused. You can still play freely.");
+        clearJamLead();
+        setStatus("Jam paused. Press Jam on or play a key to resume.");
       }
     };
 
     quietButton.onclick = function () {
+      jamOn = false;
+      updateJamButton();
       stopJam();
       stopAllNotes();
-      setStatus("Quiet now.");
+      clearJamLead();
+      setStatus("Quiet now. Press Start or any key to play again.");
     };
 
     volumeControl.oninput = volumeControl.onchange = updateMasterVolume;
@@ -314,15 +315,60 @@
 
   function steerJam(item) {
     var idx = findNoteIndex(item);
+    var changed = idx !== jamRoot;
+
     jamRoot = idx;
-    lastUserTime = nowMs();
     arpPatternIndex = (arpPatternIndex + 1) % arpPatterns.length;
     arpStep = 0;
-    setStatus("Jam follows " + item.note + ". Keep exploring.");
+    markJamLead(item);
+
+    if (changed) {
+      setStatus("Now jamming around " + item.note + ". Keeps playing until you press another key.");
+    } else {
+      setStatus("Still jamming around " + item.note + ". Press another key to change direction.");
+    }
   }
 
-  function nowMs() {
-    return new Date().getTime();
+  function updateJamButton() {
+    jamButton.className = jamOn ? "secondary-button is-on" : "secondary-button";
+    jamButton.innerHTML = "";
+    jamButton.appendChild(document.createTextNode(jamOn ? "Jam on" : "Jam off"));
+  }
+
+  function markJamLead(item) {
+    var i;
+    var pad;
+
+    for (i = 0; i < notes.length; i += 1) {
+      pad = document.getElementById("pad-" + notes[i].code);
+      if (pad) {
+        pad.className = "pad";
+      }
+    }
+
+    pad = document.getElementById("pad-" + item.code);
+    if (pad) {
+      pad.className = "pad is-leading";
+    }
+  }
+
+  function clearJamLead() {
+    var i;
+    var pad;
+
+    for (i = 0; i < notes.length; i += 1) {
+      pad = document.getElementById("pad-" + notes[i].code);
+      if (pad) {
+        pad.className = "pad";
+      }
+    }
+  }
+
+  function enableJamFromUser(item) {
+    jamOn = true;
+    updateJamButton();
+    steerJam(item);
+    ensureJamRunning();
   }
 
   function ensureAudio() {
@@ -406,14 +452,7 @@
     }
 
     if (source === "user") {
-      steerJam(item);
-      if (!jamOn) {
-        jamOn = true;
-        jamButton.className = "secondary-button is-on";
-        jamButton.innerHTML = "";
-        jamButton.appendChild(document.createTextNode("Jam on"));
-        startJam();
-      }
+      enableJamFromUser(item);
     }
 
     limitVoices();
@@ -534,12 +573,13 @@
 
   function showPad(item) {
     var pad = document.getElementById("pad-" + item.code);
+    var leading = jamOn && findNoteIndex(item) === jamRoot;
     if (!pad) {
       return;
     }
-    pad.className = "pad is-active";
+    pad.className = leading ? "pad is-active is-leading" : "pad is-active";
     window.setTimeout(function () {
-      pad.className = "pad";
+      pad.className = leading ? "pad is-leading" : "pad";
     }, 140);
   }
 
@@ -568,7 +608,21 @@
     stopJam();
     jamBeat = 0;
     jamNextBeat = audio.currentTime + 0.05;
+    markJamLead(notes[jamRoot]);
     scheduleJam();
+  }
+
+  function ensureJamRunning() {
+    if (!jamOn || !audio || !samplesReady) {
+      return;
+    }
+
+    if (jamTimer === null) {
+      if (jamNextBeat < audio.currentTime) {
+        jamNextBeat = audio.currentTime + 0.05;
+      }
+      scheduleJam();
+    }
   }
 
   function stopJam() {
@@ -602,26 +656,27 @@
   }
 
   function playJamBeat(beat, time) {
-    var stepInBar = beat % 8;
+    var stepInBar = beat % 16;
     var pattern = arpPatterns[arpPatternIndex];
     var arpOffset = pattern[arpStep % pattern.length];
     var arpIndex = clampIndex(jamRoot + arpOffset - 2);
     var padIndex = clampIndex(jamRoot);
     var bassIndex = clampIndex(jamRoot - 2);
-    var idleBoost = nowMs() - lastUserTime > 10000;
+    var fifthIndex = clampIndex(jamRoot + 2);
 
     if (stepInBar % 2 === 0) {
-      playSampleVoice(notes[arpIndex], 0.48, "auto", time);
+      playSampleVoice(notes[arpIndex], 0.5, "auto", time);
       arpStep += 1;
     }
 
-    if (stepInBar === 0) {
-      playSampleVoice(notes[padIndex], 0.32, "auto", time);
-      playSampleVoice(notes[bassIndex], 0.26, "auto", time);
+    if (stepInBar === 0 || stepInBar === 8) {
+      playSampleVoice(notes[padIndex], 0.36, "auto", time);
+      playSampleVoice(notes[fifthIndex], 0.28, "auto", time);
+      playSampleVoice(notes[bassIndex], 0.3, "auto", time);
     }
 
-    if (idleBoost && stepInBar === 0) {
-      jamRoot = clampIndex(jamRoot + (beat % 2 === 0 ? 1 : -1));
+    if (stepInBar === 4 || stepInBar === 12) {
+      playSampleVoice(notes[padIndex], 0.24, "auto", time);
     }
 
     pulseBeat(stepInBar === 0);
