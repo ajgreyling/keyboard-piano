@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
   <title>Kind Keys Piano</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -22,9 +22,8 @@
       <div>
         <h2 id="how-to-play">Play with these keys</h2>
         <p>
-          Use <strong>A S D F G H J K L ;</strong> or tap the coloured pads.
-          Pentatonic notes stay musical. The jam plays continuously around your
-          last key until you press a different one.
+          Use <strong>A S D F G H J K L ;</strong>, tap the piano keys, or press
+          several at once with multi-touch. Pentatonic notes stay musical.
         </p>
       </div>
       <button id="startButton" class="start-button" type="button">
@@ -44,8 +43,8 @@
       </button>
     </section>
 
-    <section class="stage" aria-label="Piano keys">
-      <div id="pads" class="pads"></div>
+    <section class="stage" aria-label="Piano keyboard">
+      <div id="pads" class="keyboard"></div>
       <div id="noteTrail" class="note-trail" aria-hidden="true"></div>
     </section>
 

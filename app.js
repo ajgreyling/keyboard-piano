@@ -16,7 +16,6 @@
 
   var activeNotes = {};
   var heldKeys = {};
-  var touchClickGuard = false;
   var maxUserVoices = 20;
   var maxAutoVoices = 10;
   var userVoiceOrder = [];
@@ -42,6 +41,23 @@
     { key: ";", code: 186, note: "A4", color: "#ee964b", sample: "A4", rate: 1 }
   ];
 
+  var touchNotes = {};
+  var whiteKeyNames = [
+    "C3", "D3", "E3", "F3", "G3", "A3", "B3",
+    "C4", "D4", "E4", "F4", "G4", "A4", "B4"
+  ];
+  var blackKeyLayout = [
+    { after: 0, label: "C#3" },
+    { after: 1, label: "D#3" },
+    { after: 3, label: "F#3" },
+    { after: 4, label: "G#3" },
+    { after: 5, label: "A#3" },
+    { after: 7, label: "C#4" },
+    { after: 8, label: "D#4" },
+    { after: 10, label: "F#4" },
+    { after: 11, label: "G#4" },
+    { after: 12, label: "A#4" }
+  ];
   var arpPatterns = [
     [0, 2, 4, 2],
     [0, 3, 4, 2],
@@ -138,32 +154,76 @@
   }
 
   function createPads() {
+    var whiteRow = document.createElement("div");
     var i;
+    var j;
+    var noteName;
+    var noteItem;
+    var whiteKey;
+    var blackKey;
+    var blackSpec;
+    var whiteCount = whiteKeyNames.length;
+    var blackWidth = 6.2;
+    var whiteWidth = 100 / whiteCount;
 
-    for (i = 0; i < notes.length; i += 1) {
-      var item = notes[i];
-      var button = document.createElement("button");
-      var inner = document.createElement("span");
-      var key = document.createElement("span");
-      var note = document.createElement("span");
+    whiteRow.className = "white-keys";
+    pads.appendChild(whiteRow);
 
-      button.type = "button";
-      button.className = "pad";
-      button.id = "pad-" + item.code;
-      button.style.backgroundColor = item.color;
-      button.setAttribute("data-code", String(item.code));
-      button.setAttribute("aria-label", "Play " + item.note + " with key " + item.key);
-
-      inner.className = "pad-inner";
-      key.className = "pad-key";
-      note.className = "pad-note";
-      key.appendChild(document.createTextNode(item.key));
-      note.appendChild(document.createTextNode(item.note));
-      inner.appendChild(key);
-      inner.appendChild(note);
-      button.appendChild(inner);
-      pads.appendChild(button);
+    for (i = 0; i < whiteCount; i += 1) {
+      noteName = whiteKeyNames[i];
+      noteItem = findNoteByName(noteName);
+      whiteKey = buildPianoKey(noteItem, noteName, "white");
+      whiteRow.appendChild(whiteKey);
     }
+
+    for (j = 0; j < blackKeyLayout.length; j += 1) {
+      blackSpec = blackKeyLayout[j];
+      blackKey = buildPianoKey(null, blackSpec.label, "black");
+      blackKey.style.left = (((blackSpec.after + 1) * whiteWidth) - (blackWidth / 2)) + "%";
+      pads.appendChild(blackKey);
+    }
+  }
+
+  function buildPianoKey(noteItem, noteName, type) {
+    var button = document.createElement("button");
+    var label = document.createElement("span");
+    var letter = document.createElement("span");
+    var pitch = document.createElement("span");
+    var className = "piano-key key-" + type;
+
+    button.type = "button";
+    if (noteItem) {
+      className += " key-playable";
+      button.id = "pad-" + noteItem.code;
+      button.setAttribute("data-code", String(noteItem.code));
+      button.setAttribute("aria-label", "Play " + noteItem.note + " with key " + noteItem.key);
+    } else {
+      className += " key-muted";
+      button.disabled = true;
+      button.setAttribute("aria-hidden", "true");
+      button.tabIndex = -1;
+    }
+
+    button.className = className;
+    label.className = "key-label";
+    letter.className = "key-letter";
+    pitch.className = "key-note";
+    letter.appendChild(document.createTextNode(noteItem ? noteItem.key : ""));
+    pitch.appendChild(document.createTextNode(noteName));
+    label.appendChild(letter);
+    label.appendChild(pitch);
+    button.appendChild(label);
+    return button;
+  }
+
+  function findNoteByName(name) {
+    var i;
+    for (i = 0; i < notes.length; i += 1) {
+      if (notes[i].note === name) {
+        return notes[i];
+      }
+    }
+    return null;
   }
 
   function bindEvents() {
@@ -206,6 +266,7 @@
       stopJam();
       stopAllNotes();
       clearJamLead();
+      touchNotes = {};
       setStatus("Quiet now. Press Start or any key to play again.");
     };
 
@@ -214,26 +275,7 @@
       setStatus("Tone warmth set to " + warmthControl.value + ".");
     };
     reverbControl.oninput = reverbControl.onchange = updateReverbMix;
-
-    pads.onclick = function (event) {
-      if (touchClickGuard) {
-        touchClickGuard = false;
-        return;
-      }
-
-      var pad = findPad(event.target || event.srcElement);
-      if (pad) {
-        triggerPad(pad);
-      }
-    };
-
-    pads.ontouchstart = function (event) {
-      var pad = findPad(event.target || event.srcElement);
-      if (pad) {
-        touchClickGuard = true;
-        triggerPad(pad);
-      }
-    };
+    bindPointerEvents();
 
     document.onkeydown = function (event) {
       var e = event || window.event;
@@ -266,14 +308,154 @@
     };
   }
 
+  function bindPointerEvents() {
+    if (pads.addEventListener) {
+      pads.addEventListener("touchstart", onTouchStart, false);
+      pads.addEventListener("touchmove", onTouchMove, false);
+      pads.addEventListener("touchend", onTouchEnd, false);
+      pads.addEventListener("touchcancel", onTouchEnd, false);
+    } else {
+      pads.ontouchstart = onTouchStart;
+      pads.ontouchmove = onTouchMove;
+      pads.ontouchend = onTouchEnd;
+      pads.ontouchcancel = onTouchEnd;
+    }
+
+    pads.onmousedown = function (event) {
+      var pad = findPad(event.target || event.srcElement);
+      if (pad) {
+        beginPointerNote(pad);
+      }
+    };
+
+    pads.onmouseup = function (event) {
+      releasePointerNote(event);
+    };
+
+    pads.onmouseleave = function (event) {
+      releasePointerNote(event);
+    };
+  }
+
+  function onTouchStart(event) {
+    var e = event || window.event;
+    var i;
+    var touch;
+    var pad;
+
+    if (e.preventDefault) {
+      e.preventDefault();
+    }
+
+    for (i = 0; i < e.changedTouches.length; i += 1) {
+      touch = e.changedTouches[i];
+      pad = findPadAtPoint(touch.clientX, touch.clientY);
+      if (pad) {
+        beginTouchNote(touch.identifier, pad);
+      }
+    }
+  }
+
+  function onTouchMove(event) {
+    var e = event || window.event;
+    var i;
+    var touch;
+    var pad;
+    var code;
+
+    if (e.preventDefault) {
+      e.preventDefault();
+    }
+
+    for (i = 0; i < e.touches.length; i += 1) {
+      touch = e.touches[i];
+      code = touchNotes[touch.identifier];
+      if (!code) {
+        continue;
+      }
+
+      pad = findPadAtPoint(touch.clientX, touch.clientY);
+      if (!pad) {
+        endTouchNote(touch.identifier);
+        continue;
+      }
+
+      if (parseInt(pad.getAttribute("data-code"), 10) !== code) {
+        endTouchNote(touch.identifier);
+        beginTouchNote(touch.identifier, pad);
+        continue;
+      }
+    }
+  }
+
+  function onTouchEnd(event) {
+    var e = event || window.event;
+    var i;
+    var touch;
+
+    if (e.preventDefault) {
+      e.preventDefault();
+    }
+
+    for (i = 0; i < e.changedTouches.length; i += 1) {
+      touch = e.changedTouches[i];
+      endTouchNote(touch.identifier);
+    }
+  }
+
+  function beginTouchNote(touchId, pad) {
+    var code = parseInt(pad.getAttribute("data-code"), 10);
+    var item = findNoteByCode(code);
+
+    if (!item || !samplesReady || touchNotes[touchId] === code) {
+      return;
+    }
+
+    touchNotes[touchId] = code;
+    ensureAudio();
+    playNote(item, 0.95, "user");
+  }
+
+  function endTouchNote(touchId) {
+    var code = touchNotes[touchId];
+    if (!code) {
+      return;
+    }
+    dampenVoicesForKey(code);
+    delete touchNotes[touchId];
+  }
+
+  function beginPointerNote(pad) {
+    var code = parseInt(pad.getAttribute("data-code"), 10);
+    if (!code || touchNotes.mouse) {
+      return;
+    }
+    touchNotes.mouse = code;
+    triggerPad(pad);
+  }
+
+  function releasePointerNote(event) {
+    var code = touchNotes.mouse;
+    if (!code) {
+      return;
+    }
+    dampenVoicesForKey(code);
+    delete touchNotes.mouse;
+  }
+
   function findPad(element) {
     while (element && element !== pads) {
-      if (hasClass(element, "pad")) {
+      if (hasClass(element, "piano-key") && element.getAttribute("data-code")) {
         return element;
       }
       element = element.parentNode;
     }
     return null;
+  }
+
+  function findPadAtPoint(x, y) {
+    var element = document.elementFromPoint ? document.elementFromPoint(x, y) : null;
+    return findPad(element);
   }
 
   function hasClass(element, className) {
@@ -349,6 +531,10 @@
     jamButton.setAttribute("aria-pressed", jamOn ? "true" : "false");
   }
 
+  function keyBaseClass(pad) {
+    return pad.className.replace(" is-active", "").replace(" is-leading", "");
+  }
+
   function markJamLead(item) {
     var i;
     var pad;
@@ -356,13 +542,13 @@
     for (i = 0; i < notes.length; i += 1) {
       pad = document.getElementById("pad-" + notes[i].code);
       if (pad) {
-        pad.className = "pad";
+        pad.className = keyBaseClass(pad);
       }
     }
 
     pad = document.getElementById("pad-" + item.code);
     if (pad) {
-      pad.className = "pad is-leading";
+      pad.className = keyBaseClass(pad) + " is-leading";
     }
   }
 
@@ -373,7 +559,7 @@
     for (i = 0; i < notes.length; i += 1) {
       pad = document.getElementById("pad-" + notes[i].code);
       if (pad) {
-        pad.className = "pad";
+        pad.className = keyBaseClass(pad);
       }
     }
   }
@@ -646,23 +832,32 @@
   function showPad(item) {
     var pad = document.getElementById("pad-" + item.code);
     var leading = jamOn && findNoteIndex(item) === jamRoot;
+    var base;
     if (!pad) {
       return;
     }
-    pad.className = leading ? "pad is-active is-leading" : "pad is-active";
+    base = keyBaseClass(pad);
+    pad.className = base + " is-active" + (leading ? " is-leading" : "");
     window.setTimeout(function () {
-      pad.className = leading ? "pad is-leading" : "pad";
+      pad.className = leading ? base + " is-leading" : base;
     }, 140);
   }
 
   function showBubble(item) {
     var bubble = document.createElement("span");
-    var index = findNoteIndex(item);
-    var left = 6 + (index * 9.7);
+    var key = document.getElementById("pad-" + item.code);
+    var stage = pads.parentNode;
+    var keyRect;
+    var stageRect;
+    var center;
 
     bubble.className = "bubble";
-    bubble.style.left = left + "%";
-    bubble.style.backgroundColor = item.color;
+    if (key && stage) {
+      keyRect = key.getBoundingClientRect();
+      stageRect = stage.getBoundingClientRect();
+      center = keyRect.left + (keyRect.width / 2) - stageRect.left;
+      bubble.style.left = center + "px";
+    }
     noteTrail.appendChild(bubble);
 
     window.setTimeout(function () {
