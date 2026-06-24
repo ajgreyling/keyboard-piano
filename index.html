@@ -33,8 +33,10 @@
     </section>
 
     <section class="transport" aria-label="Jam transport">
-      <div id="beatPulse" class="beat-pulse" aria-hidden="true"></div>
-      <button id="jamButton" class="secondary-button" type="button">
+      <div class="beat-pulse-slot" aria-hidden="true">
+        <div id="beatPulse" class="beat-pulse"></div>
+      </div>
+      <button id="jamButton" class="secondary-button" type="button" aria-pressed="false">
         Jam off
       </button>
       <button id="quietButton" class="secondary-button" type="button">

@@ -324,15 +324,22 @@
 
     if (changed) {
       setStatus("Now jamming around " + item.note + ". Keeps playing until you press another key.");
-    } else {
-      setStatus("Still jamming around " + item.note + ". Press another key to change direction.");
     }
   }
 
   function updateJamButton() {
-    jamButton.className = jamOn ? "secondary-button is-on" : "secondary-button";
-    jamButton.innerHTML = "";
-    jamButton.appendChild(document.createTextNode(jamOn ? "Jam on" : "Jam off"));
+    var label = jamOn ? "Jam on" : "Jam off";
+    var className = jamOn ? "secondary-button is-on" : "secondary-button";
+
+    if (jamButton.className !== className) {
+      jamButton.className = className;
+    }
+
+    if (jamButton.textContent !== label) {
+      jamButton.textContent = label;
+    }
+
+    jamButton.setAttribute("aria-pressed", jamOn ? "true" : "false");
   }
 
   function markJamLead(item) {
@@ -365,8 +372,10 @@
   }
 
   function enableJamFromUser(item) {
-    jamOn = true;
-    updateJamButton();
+    if (!jamOn) {
+      jamOn = true;
+      updateJamButton();
+    }
     steerJam(item);
     ensureJamRunning();
   }
