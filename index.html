@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kind Keys Piano</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app" role="application" aria-label="Kind Keys Piano">
+    <section class="hero">
+      <p class="eyebrow">Kind Keys Piano</p>
+      <h1>Every careful press becomes music.</h1>
+      <p class="intro">
+        A GarageBand-style jam piano for old laptops, small hands, and browsers that
+        deserve a second life. Turn on Jam and your notes steer the music.
+      </p>
+    </section>
+
+    <section class="panel" aria-labelledby="how-to-play">
+      <div>
+        <h2 id="how-to-play">Play with these keys</h2>
+        <p>
+          Use <strong>A S D F G H J K L ;</strong> or tap the coloured pads.
+          Pentatonic notes stay musical. Jam mode keeps playing and follows your lead.
+        </p>
+      </div>
+      <button id="startButton" class="start-button" type="button">
+        Start piano
+      </button>
+    </section>
+
+    <section class="transport" aria-label="Jam transport">
+      <div id="beatPulse" class="beat-pulse" aria-hidden="true"></div>
+      <button id="jamButton" class="secondary-button" type="button">
+        Jam off
+      </button>
+      <button id="quietButton" class="secondary-button" type="button">
+        Quiet now
+      </button>
+    </section>
+
+    <section class="stage" aria-label="Piano keys">
+      <div id="pads" class="pads"></div>
+      <div id="noteTrail" class="note-trail" aria-hidden="true"></div>
+    </section>
+
+    <section class="controls" aria-label="Sound controls">
+      <label>
+        Volume
+        <input id="volume" type="range" min="0" max="100" value="55">
+      </label>
+      <label>
+        Warmth
+        <input id="warmth" type="range" min="0" max="100" value="65">
+      </label>
+      <label>
+        Room
+        <input id="reverb" type="range" min="0" max="100" value="42">
+      </label>
+    </section>
+
+    <p id="status" class="status" role="status">
+      Press Start piano, then try A S D F G H J K L ;. Turn on Jam to keep playing.
+    </p>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
