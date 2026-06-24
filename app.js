@@ -17,8 +17,10 @@
   var activeNotes = {};
   var heldKeys = {};
   var touchClickGuard = false;
-  var maxVoices = 12;
-  var voiceOrder = [];
+  var maxUserVoices = 20;
+  var maxAutoVoices = 10;
+  var userVoiceOrder = [];
+  var autoVoiceOrder = [];
 
   var jamOn = false;
   var jamRoot = 5;
@@ -194,7 +196,7 @@
       } else {
         stopJam();
         clearJamLead();
-        setStatus("Jam paused. Press Jam on or play a key to resume.");
+        setStatus("Jam paused. Play freely with full piano polyphony.");
       }
     };
 
@@ -238,7 +240,11 @@
       var code = getKeyCode(e);
       var item = findNoteByCode(code);
 
-      if (!item || heldKeys[code] || !samplesReady) {
+      if (!item || !samplesReady) {
+        return;
+      }
+
+      if (e.repeat || heldKeys[code]) {
         return;
       }
 
@@ -256,6 +262,7 @@
       var e = event || window.event;
       var code = getKeyCode(e);
       heldKeys[code] = false;
+      dampenVoicesForKey(code);
     };
   }
 
@@ -372,10 +379,6 @@
   }
 
   function enableJamFromUser(item) {
-    if (!jamOn) {
-      jamOn = true;
-      updateJamButton();
-    }
     steerJam(item);
     ensureJamRunning();
   }
@@ -455,21 +458,27 @@
     return 1800 + (warmth * 5200);
   }
 
-  function playNote(item, velocity, source) {
+  function playNote(item, velocity, source, when) {
+    var at = when === undefined ? audio.currentTime : when;
+
     if (!audio || !master || !samplesReady) {
       return;
     }
 
     if (source === "user") {
-      enableJamFromUser(item);
+      if (jamOn) {
+        enableJamFromUser(item);
+      }
+      limitUserVoices();
+      playSampleVoice(item, velocity, "user", at);
+      showPad(item);
+      showBubble(item);
+      return;
     }
 
-    limitVoices();
-    playSampleVoice(item, velocity, source || "auto", audio.currentTime);
+    limitAutoVoices();
+    playSampleVoice(item, velocity, "auto", at);
     showPad(item);
-    if (source === "user") {
-      showBubble(item);
-    }
   }
 
   function playSampleVoice(item, velocity, source, when) {
@@ -524,19 +533,68 @@
     voice = {
       nodes: [sourceNode, filter, gain, pan],
       gain: gain,
-      source: sourceNode
+      source: sourceNode,
+      keyCode: item.code,
+      sourceType: source
     };
     activeNotes[voiceId] = voice;
-    voiceOrder.push(voiceId);
+
+    if (source === "user") {
+      userVoiceOrder.push(voiceId);
+    } else {
+      autoVoiceOrder.push(voiceId);
+    }
 
     window.setTimeout(function () {
       removeVoice(voiceId);
     }, Math.ceil(duration * 1000) + 80);
   }
 
-  function limitVoices() {
-    while (voiceOrder.length >= maxVoices) {
-      stopVoice(voiceOrder[0]);
+  function limitUserVoices() {
+    while (userVoiceOrder.length >= maxUserVoices) {
+      stopVoice(userVoiceOrder[0]);
+    }
+  }
+
+  function limitAutoVoices() {
+    while (autoVoiceOrder.length >= maxAutoVoices) {
+      stopVoice(autoVoiceOrder[0]);
+    }
+  }
+
+  function dampenVoicesForKey(code) {
+    var voiceId;
+    var voice;
+    var now;
+
+    if (!audio) {
+      return;
+    }
+
+    now = audio.currentTime;
+
+    for (voiceId in activeNotes) {
+      if (!activeNotes.hasOwnProperty(voiceId)) {
+        continue;
+      }
+
+      voice = activeNotes[voiceId];
+
+      if (voice.keyCode !== code || voice.sourceType !== "user") {
+        continue;
+      }
+
+      try {
+        voice.gain.gain.cancelScheduledValues(now);
+        voice.gain.gain.setValueAtTime(Math.max(voice.gain.gain.value, 0.0001), now);
+        voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+        if (voice.source && voice.source.stop) {
+          voice.source.stop(now + 0.18);
+        }
+      } catch (ignore) {
+      }
+
+      removeVoice(voiceId);
     }
   }
 
@@ -565,15 +623,20 @@
   function removeVoice(voiceId) {
     var i;
     delete activeNotes[voiceId];
-    for (i = voiceOrder.length - 1; i >= 0; i -= 1) {
-      if (voiceOrder[i] === voiceId) {
-        voiceOrder.splice(i, 1);
+    for (i = userVoiceOrder.length - 1; i >= 0; i -= 1) {
+      if (userVoiceOrder[i] === voiceId) {
+        userVoiceOrder.splice(i, 1);
+      }
+    }
+    for (i = autoVoiceOrder.length - 1; i >= 0; i -= 1) {
+      if (autoVoiceOrder[i] === voiceId) {
+        autoVoiceOrder.splice(i, 1);
       }
     }
   }
 
   function stopAllNotes() {
-    var copy = voiceOrder.slice(0);
+    var copy = userVoiceOrder.concat(autoVoiceOrder);
     var i;
     for (i = 0; i < copy.length; i += 1) {
       stopVoice(copy[i]);
@@ -674,18 +737,18 @@
     var fifthIndex = clampIndex(jamRoot + 2);
 
     if (stepInBar % 2 === 0) {
-      playSampleVoice(notes[arpIndex], 0.5, "auto", time);
+      playNote(notes[arpIndex], 0.5, "auto", time);
       arpStep += 1;
     }
 
     if (stepInBar === 0 || stepInBar === 8) {
-      playSampleVoice(notes[padIndex], 0.36, "auto", time);
-      playSampleVoice(notes[fifthIndex], 0.28, "auto", time);
-      playSampleVoice(notes[bassIndex], 0.3, "auto", time);
+      playNote(notes[padIndex], 0.36, "auto", time);
+      playNote(notes[fifthIndex], 0.28, "auto", time);
+      playNote(notes[bassIndex], 0.3, "auto", time);
     }
 
     if (stepInBar === 4 || stepInBar === 12) {
-      playSampleVoice(notes[padIndex], 0.24, "auto", time);
+      playNote(notes[padIndex], 0.24, "auto", time);
     }
 
     pulseBeat(stepInBar === 0);
