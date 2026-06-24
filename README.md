@@ -39,7 +39,11 @@ Then open `http://localhost:8000`.
 
 ## Live Demo
 
-`https://ajgreyling.github.io/keyboard-piano/`
+- CongoSky (flagship): `https://congosky.cloud/games/kind-keys/`
+- GitHub Pages mirror: `https://ajgreyling.github.io/keyboard-piano/`
+
+Studio roadmap (drums → full GarageBand): see `games/ROADMAP.md` in the
+[congosky-cloud](https://github.com/ajgreyling/congosky-cloud) repo.
 
 ## Samples
 
