@@ -17,7 +17,8 @@ A S D F G H J K L ;
 - **Jam on**: continuous arpeggios, soft bass, and brush drums follow your lead
 - **Your notes steer**: each press sets the new musical direction
 - **Pentatonic scale**: gentle exploring stays musical
-- **Room reverb + warmth**: richer piano tone without sample downloads
+- **Salamander Grand Piano samples**: real acoustic piano recordings (CC BY 3.0)
+- **Room reverb + warmth**: studio-style tone shaping
 
 ## Local Server
 
@@ -29,15 +30,18 @@ Then open `http://localhost:8000`.
 
 ## Old Machine Choices
 
-- No build step, npm, fonts, images, or sample files
+- No build step or npm dependencies
 - ES5-style JavaScript for older browser engines
 - `AudioContext` with `webkitAudioContext` fallback
-- Additive piano synthesis with hammer attack and generated reverb
+- Bundled Salamander piano samples (~580 KB for the playable range)
 - Voice limiting to keep CPU use low on old Linux laptops
 - Big click and touch targets for small hands
 
 ## Live Demo
 
-After publishing, enable GitHub Pages on the `main` branch to host at:
-
 `https://ajgreyling.github.io/keyboard-piano/`
+
+## Samples
+
+Piano samples from [Salamander Grand Piano](https://archive.org/details/SalamanderGrandPianoV3)
+by Alexander Holm, distributed via [Tone.js](https://tonejs.github.io/) (CC BY 3.0).

@@ -1,5 +1,7 @@
 (function () {
   var AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  var SEMITONE = Math.pow(2, 1 / 12);
+
   var audio = null;
   var master = null;
   var reverbSend = null;
@@ -7,10 +9,15 @@
   var reverb = null;
   var compressor = null;
 
+  var sampleBuffers = {};
+  var samplesReady = false;
+  var samplesLoading = false;
+  var sampleFiles = ["C3", "Ds3", "Fs3", "A3", "C4", "Ds4", "Fs4", "A4"];
+
   var activeNotes = {};
   var heldKeys = {};
   var touchClickGuard = false;
-  var maxVoices = 10;
+  var maxVoices = 12;
   var voiceOrder = [];
 
   var jamOn = false;
@@ -18,20 +25,20 @@
   var jamNextBeat = 0;
   var jamBeat = 0;
   var jamTimer = null;
-  var jamTempo = 76;
+  var jamTempo = 68;
   var lastUserTime = 0;
 
   var notes = [
-    { key: "A", code: 65, note: "C3", freq: 130.81, color: "#ffadad", scale: 0 },
-    { key: "S", code: 83, note: "D3", freq: 146.83, color: "#ffd6a5", scale: 1 },
-    { key: "D", code: 68, note: "E3", freq: 164.81, color: "#fdffb6", scale: 2 },
-    { key: "F", code: 70, note: "G3", freq: 196.00, color: "#caffbf", scale: 3 },
-    { key: "G", code: 71, note: "A3", freq: 220.00, color: "#9bf6ff", scale: 4 },
-    { key: "H", code: 72, note: "C4", freq: 261.63, color: "#a0c4ff", scale: 5 },
-    { key: "J", code: 74, note: "D4", freq: 293.66, color: "#bdb2ff", scale: 6 },
-    { key: "K", code: 75, note: "E4", freq: 329.63, color: "#ffc6ff", scale: 7 },
-    { key: "L", code: 76, note: "G4", freq: 392.00, color: "#f4d35e", scale: 8 },
-    { key: ";", code: 186, note: "A4", freq: 440.00, color: "#ee964b", scale: 9 }
+    { key: "A", code: 65, note: "C3", color: "#ffadad", sample: "C3", rate: 1 },
+    { key: "S", code: 83, note: "D3", color: "#ffd6a5", sample: "Ds3", rate: SEMITONE * -1 },
+    { key: "D", code: 68, note: "E3", color: "#fdffb6", sample: "Fs3", rate: SEMITONE * -2 },
+    { key: "F", code: 70, note: "G3", color: "#caffbf", sample: "Fs3", rate: SEMITONE },
+    { key: "G", code: 71, note: "A3", color: "#9bf6ff", sample: "A3", rate: 1 },
+    { key: "H", code: 72, note: "C4", color: "#a0c4ff", sample: "C4", rate: 1 },
+    { key: "J", code: 74, note: "D4", color: "#bdb2ff", sample: "Ds4", rate: SEMITONE * -1 },
+    { key: "K", code: 75, note: "E4", color: "#ffc6ff", sample: "Fs4", rate: SEMITONE * -2 },
+    { key: "L", code: 76, note: "G4", color: "#f4d35e", sample: "Fs4", rate: SEMITONE },
+    { key: ";", code: 186, note: "A4", color: "#ee964b", sample: "A4", rate: 1 }
   ];
 
   var arpPatterns = [
@@ -42,15 +49,6 @@
   ];
   var arpPatternIndex = 0;
   var arpStep = 0;
-
-  var pianoPartials = [
-    { ratio: 1, gain: 1.0, decay: 2.8 },
-    { ratio: 2, gain: 0.55, decay: 2.0 },
-    { ratio: 3, gain: 0.28, decay: 1.4 },
-    { ratio: 4.2, gain: 0.16, decay: 1.0 },
-    { ratio: 5.4, gain: 0.09, decay: 0.7 },
-    { ratio: 6.8, gain: 0.05, decay: 0.5 }
-  ];
 
   var pads = document.getElementById("pads");
   var noteTrail = document.getElementById("noteTrail");
@@ -74,7 +72,68 @@
       return;
     }
 
-    setStatus("Press Start piano, then try A S D F G H J K L ;. Turn on Jam to keep playing.");
+    setStatus("Loading grand piano samples...");
+    preloadSamples();
+  }
+
+  function preloadSamples() {
+    var pending = sampleFiles.length;
+    var failed = 0;
+    var i;
+
+    if (samplesLoading || samplesReady) {
+      return;
+    }
+
+    samplesLoading = true;
+    ensureAudio();
+
+    for (i = 0; i < sampleFiles.length; i += 1) {
+      loadSampleFile(sampleFiles[i], function (ok) {
+        pending -= 1;
+        if (!ok) {
+          failed += 1;
+        }
+
+        if (pending === 0) {
+          samplesLoading = false;
+          samplesReady = failed < sampleFiles.length;
+
+          if (samplesReady) {
+            setStatus("Grand piano ready. Press Start, then A S D F G H J K L ;.");
+          } else {
+            setStatus("Could not load piano samples. Check your connection and refresh.");
+            startButton.disabled = true;
+          }
+        }
+      });
+    }
+  }
+
+  function loadSampleFile(name, done) {
+    var request = new XMLHttpRequest();
+    request.open("GET", "samples/" + name + ".mp3", true);
+    request.responseType = "arraybuffer";
+
+    request.onload = function () {
+      if (request.status < 200 || request.status >= 300 || !request.response) {
+        done(false);
+        return;
+      }
+
+      audio.decodeAudioData(request.response, function (buffer) {
+        sampleBuffers[name] = buffer;
+        done(true);
+      }, function () {
+        done(false);
+      });
+    };
+
+    request.onerror = function () {
+      done(false);
+    };
+
+    request.send();
   }
 
   function createPads() {
@@ -108,8 +167,13 @@
 
   function bindEvents() {
     startButton.onclick = function () {
+      if (!samplesReady) {
+        setStatus("Piano samples are still loading. One moment.");
+        return;
+      }
+
       ensureAudio();
-      playNote(notes[5], 1, "user");
+      playNote(notes[5], 0.92, "user");
       if (jamOn) {
         startJam();
       }
@@ -117,6 +181,10 @@
     };
 
     jamButton.onclick = function () {
+      if (!samplesReady) {
+        return;
+      }
+
       ensureAudio();
       jamOn = !jamOn;
       jamButton.className = jamOn ? "secondary-button is-on" : "secondary-button";
@@ -169,13 +237,13 @@
       var code = getKeyCode(e);
       var item = findNoteByCode(code);
 
-      if (!item || heldKeys[code]) {
+      if (!item || heldKeys[code] || !samplesReady) {
         return;
       }
 
       heldKeys[code] = true;
       ensureAudio();
-      playNote(item, 1, "user");
+      playNote(item, 0.95, "user");
 
       if (e.preventDefault) {
         e.preventDefault();
@@ -208,9 +276,9 @@
     var code = parseInt(pad.getAttribute("data-code"), 10);
     var item = findNoteByCode(code);
 
-    if (item) {
+    if (item && samplesReady) {
       ensureAudio();
-      playNote(item, 1, "user");
+      playNote(item, 0.95, "user");
     }
   }
 
@@ -265,17 +333,17 @@
 
     audio = new AudioContextCtor();
     compressor = audio.createDynamicsCompressor();
-    compressor.threshold.value = -18;
-    compressor.knee.value = 18;
-    compressor.ratio.value = 3;
-    compressor.attack.value = 0.006;
-    compressor.release.value = 0.18;
+    compressor.threshold.value = -22;
+    compressor.knee.value = 24;
+    compressor.ratio.value = 2.5;
+    compressor.attack.value = 0.008;
+    compressor.release.value = 0.22;
 
     dryGain = audio.createGain();
     reverbSend = audio.createGain();
     master = audio.createGain();
     reverb = audio.createConvolver();
-    reverb.buffer = buildReverbImpulse(2.4, 2.2);
+    reverb.buffer = buildReverbImpulse(3.1, 2.6);
 
     dryGain.connect(compressor);
     reverbSend.connect(reverb);
@@ -315,20 +383,25 @@
   function updateMasterVolume() {
     var volume = parseInt(volumeControl.value, 10) / 100;
     if (master) {
-      master.gain.value = volume * 0.82;
+      master.gain.value = volume * 0.9;
     }
   }
 
   function updateReverbMix() {
     var mix = parseInt(reverbControl.value, 10) / 100;
     if (dryGain && reverbSend) {
-      dryGain.gain.value = 1 - (mix * 0.35);
-      reverbSend.gain.value = mix * 0.55;
+      dryGain.gain.value = 1 - (mix * 0.28);
+      reverbSend.gain.value = mix * 0.72;
     }
   }
 
+  function warmthCutoff() {
+    var warmth = parseInt(warmthControl.value, 10) / 100;
+    return 1800 + (warmth * 5200);
+  }
+
   function playNote(item, velocity, source) {
-    if (!audio || !master) {
+    if (!audio || !master || !samplesReady) {
       return;
     }
 
@@ -344,149 +417,73 @@
     }
 
     limitVoices();
-    playPianoVoice(item, velocity, source || "auto");
+    playSampleVoice(item, velocity, source || "auto", audio.currentTime);
     showPad(item);
-    showBubble(item);
+    if (source === "user") {
+      showBubble(item);
+    }
   }
 
-  function playPianoVoice(item, velocity, source) {
-    var now = audio.currentTime;
-    var warmth = parseInt(warmthControl.value, 10) / 100;
-    var voiceId = String(now) + "-" + item.code + "-" + Math.random();
-    var voiceGain = audio.createGain();
-    var toneFilter = audio.createBiquadFilter();
-    var i;
-    var partial;
-    var osc;
-    var partialGain;
-    var release;
+  function playSampleVoice(item, velocity, source, when) {
+    var buffer = sampleBuffers[item.sample];
+    var voiceId = String(when) + "-" + item.code + "-" + Math.random();
+    var sourceNode = audio.createBufferSource();
+    var gain = audio.createGain();
+    var filter = audio.createBiquadFilter();
+    var pan = audio.createStereoPanner ? audio.createStereoPanner() : null;
     var peak;
-    var voice = { nodes: [], gain: voiceGain };
+    var duration;
+    var voice;
 
-    toneFilter.type = "lowpass";
-    toneFilter.frequency.value = 900 + (warmth * 3200);
-    toneFilter.Q.value = 0.45;
-
-    voiceGain.connect(toneFilter);
-    toneFilter.connect(dryGain);
-    toneFilter.connect(reverbSend);
-
-    peak = source === "user" ? 0.42 : 0.28;
-    peak *= velocity;
-
-    voiceGain.gain.setValueAtTime(0.0001, now);
-    voiceGain.gain.exponentialRampToValueAtTime(peak, now + 0.008);
-    voiceGain.gain.exponentialRampToValueAtTime(peak * 0.55, now + 0.12);
-
-    release = source === "user" ? 2.4 : 1.6;
-    voiceGain.gain.exponentialRampToValueAtTime(0.0001, now + release);
-
-    playHammerNoise(now, item.freq, velocity * (source === "user" ? 0.22 : 0.12), voice);
-
-    for (i = 0; i < pianoPartials.length; i += 1) {
-      partial = pianoPartials[i];
-      osc = audio.createOscillator();
-      partialGain = audio.createGain();
-      osc.type = i < 2 ? "triangle" : "sine";
-      osc.frequency.value = item.freq * partial.ratio * (1 + ((i % 2) * 0.0015));
-      partialGain.gain.setValueAtTime(partial.gain * velocity * 0.14, now);
-      partialGain.gain.exponentialRampToValueAtTime(0.0001, now + partial.decay);
-      osc.connect(partialGain);
-      partialGain.connect(voiceGain);
-      osc.start(now);
-      osc.stop(now + partial.decay + 0.05);
-      voice.nodes.push(osc);
-      voice.nodes.push(partialGain);
+    if (!buffer) {
+      return;
     }
 
-    voice.nodes.push(toneFilter);
+    sourceNode.buffer = buffer;
+    sourceNode.playbackRate.value = item.rate;
+
+    filter.type = "lowpass";
+    filter.frequency.value = warmthCutoff();
+    filter.Q.value = 0.35;
+
+    peak = source === "user" ? 0.78 : 0.42;
+    peak *= velocity;
+
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.exponentialRampToValueAtTime(peak, when + 0.006);
+    if (source === "auto") {
+      gain.gain.exponentialRampToValueAtTime(peak * 0.55, when + 0.18);
+      gain.gain.exponentialRampToValueAtTime(0.0001, when + 2.4);
+    }
+
+    sourceNode.connect(filter);
+    filter.connect(gain);
+
+    if (pan) {
+      pan.pan.value = source === "user" ? ((Math.random() * 0.3) - 0.15) : 0;
+      gain.connect(pan);
+      pan.connect(dryGain);
+      pan.connect(reverbSend);
+    } else {
+      gain.connect(dryGain);
+      gain.connect(reverbSend);
+    }
+
+    sourceNode.start(when);
+    duration = (buffer.duration / item.rate) + 0.05;
+    sourceNode.stop(when + duration);
+
+    voice = {
+      nodes: [sourceNode, filter, gain, pan],
+      gain: gain,
+      source: sourceNode
+    };
     activeNotes[voiceId] = voice;
     voiceOrder.push(voiceId);
 
     window.setTimeout(function () {
       removeVoice(voiceId);
-    }, Math.ceil(release * 1000) + 120);
-  }
-
-  function playHammerNoise(start, freq, amount, voice) {
-    var length = Math.floor(audio.sampleRate * 0.04);
-    var buffer = audio.createBuffer(1, length, audio.sampleRate);
-    var data = buffer.getChannelData(0);
-    var i;
-    var source;
-    var filter;
-    var gain;
-
-    for (i = 0; i < length; i += 1) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / length);
-    }
-
-    source = audio.createBufferSource();
-    filter = audio.createBiquadFilter();
-    gain = audio.createGain();
-    source.buffer = buffer;
-    filter.type = "bandpass";
-    filter.frequency.value = Math.min(4200, freq * 6);
-    filter.Q.value = 0.8;
-    gain.gain.setValueAtTime(amount, start);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.035);
-    source.connect(filter);
-    filter.connect(gain);
-    gain.connect(voice.gain);
-    source.start(start);
-    source.stop(start + 0.05);
-    voice.nodes.push(source);
-    voice.nodes.push(filter);
-    voice.nodes.push(gain);
-  }
-
-  function playBassNote(item, velocity) {
-    var now = audio.currentTime;
-    var osc = audio.createOscillator();
-    var gain = audio.createGain();
-    var filter = audio.createBiquadFilter();
-
-    osc.type = "sine";
-    osc.frequency.value = item.freq * 0.5;
-    filter.type = "lowpass";
-    filter.frequency.value = 280;
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.18 * velocity, now + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(dryGain);
-    osc.start(now);
-    osc.stop(now + 0.6);
-  }
-
-  function playBrush(velocity) {
-    var now = audio.currentTime;
-    var length = Math.floor(audio.sampleRate * 0.06);
-    var buffer = audio.createBuffer(1, length, audio.sampleRate);
-    var data = buffer.getChannelData(0);
-    var i;
-    var source;
-    var filter;
-    var gain;
-
-    for (i = 0; i < length; i += 1) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / length);
-    }
-
-    source = audio.createBufferSource();
-    filter = audio.createBiquadFilter();
-    gain = audio.createGain();
-    source.buffer = buffer;
-    filter.type = "highpass";
-    filter.frequency.value = 5200;
-    gain.gain.setValueAtTime(0.06 * velocity, now);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
-    source.connect(filter);
-    filter.connect(gain);
-    gain.connect(dryGain);
-    source.start(now);
-    source.stop(now + 0.07);
+    }, Math.ceil(duration * 1000) + 80);
   }
 
   function limitVoices() {
@@ -505,11 +502,11 @@
     }
 
     try {
-      voice.gain.gain.value = 0.0001;
-      for (i = 0; i < voice.nodes.length; i += 1) {
-        if (voice.nodes[i].stop) {
-          voice.nodes[i].stop(0);
-        }
+      voice.gain.gain.cancelScheduledValues(0);
+      voice.gain.gain.setValueAtTime(voice.gain.gain.value, audio.currentTime);
+      voice.gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.08);
+      if (voice.source && voice.source.stop) {
+        voice.source.stop(audio.currentTime + 0.1);
       }
     } catch (ignore) {
     }
@@ -564,7 +561,7 @@
   }
 
   function startJam() {
-    if (!audio) {
+    if (!audio || !samplesReady) {
       return;
     }
 
@@ -609,22 +606,18 @@
     var pattern = arpPatterns[arpPatternIndex];
     var arpOffset = pattern[arpStep % pattern.length];
     var arpIndex = clampIndex(jamRoot + arpOffset - 2);
-    var bassIndex = clampIndex(jamRoot - 2);
     var padIndex = clampIndex(jamRoot);
-    var idleBoost = nowMs() - lastUserTime > 8000;
+    var bassIndex = clampIndex(jamRoot - 2);
+    var idleBoost = nowMs() - lastUserTime > 10000;
 
     if (stepInBar % 2 === 0) {
-      playScheduledNote(notes[arpIndex], 0.62, time);
+      playSampleVoice(notes[arpIndex], 0.48, "auto", time);
       arpStep += 1;
     }
 
-    if (stepInBar === 0 || stepInBar === 4) {
-      playScheduledNote(notes[padIndex], 0.34, time);
-      playBassAt(notes[bassIndex], 0.7, time);
-    }
-
-    if (stepInBar === 2 || stepInBar === 6) {
-      playBrushAt(0.55, time);
+    if (stepInBar === 0) {
+      playSampleVoice(notes[padIndex], 0.32, "auto", time);
+      playSampleVoice(notes[bassIndex], 0.26, "auto", time);
     }
 
     if (idleBoost && stepInBar === 0) {
@@ -632,88 +625,6 @@
     }
 
     pulseBeat(stepInBar === 0);
-  }
-
-  function playScheduledNote(item, velocity, time) {
-    var now = time;
-    var warmth = parseInt(warmthControl.value, 10) / 100;
-    var voiceGain = audio.createGain();
-    var toneFilter = audio.createBiquadFilter();
-    var i;
-    var partial;
-    var osc;
-    var partialGain;
-
-    limitVoices();
-    toneFilter.type = "lowpass";
-    toneFilter.frequency.value = 900 + (warmth * 3200);
-    voiceGain.connect(toneFilter);
-    toneFilter.connect(dryGain);
-    toneFilter.connect(reverbSend);
-    voiceGain.gain.setValueAtTime(0.0001, now);
-    voiceGain.gain.exponentialRampToValueAtTime(0.24 * velocity, now + 0.01);
-    voiceGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.1);
-
-    for (i = 0; i < 4; i += 1) {
-      partial = pianoPartials[i];
-      osc = audio.createOscillator();
-      partialGain = audio.createGain();
-      osc.type = "triangle";
-      osc.frequency.value = item.freq * partial.ratio;
-      partialGain.gain.setValueAtTime(partial.gain * velocity * 0.1, now);
-      partialGain.gain.exponentialRampToValueAtTime(0.0001, now + partial.decay * 0.7);
-      osc.connect(partialGain);
-      partialGain.connect(voiceGain);
-      osc.start(now);
-      osc.stop(now + partial.decay);
-    }
-  }
-
-  function playBassAt(item, velocity, time) {
-    var osc = audio.createOscillator();
-    var gain = audio.createGain();
-    var filter = audio.createBiquadFilter();
-
-    osc.type = "sine";
-    osc.frequency.value = item.freq * 0.5;
-    filter.type = "lowpass";
-    filter.frequency.value = 240;
-    gain.gain.setValueAtTime(0.0001, time);
-    gain.gain.exponentialRampToValueAtTime(0.14 * velocity, time + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.5);
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(dryGain);
-    osc.start(time);
-    osc.stop(time + 0.55);
-  }
-
-  function playBrushAt(velocity, time) {
-    var length = Math.floor(audio.sampleRate * 0.05);
-    var buffer = audio.createBuffer(1, length, audio.sampleRate);
-    var data = buffer.getChannelData(0);
-    var i;
-    var source;
-    var filter;
-    var gain;
-
-    for (i = 0; i < length; i += 1) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / length);
-    }
-
-    source = audio.createBufferSource();
-    filter = audio.createBiquadFilter();
-    gain = audio.createGain();
-    source.buffer = buffer;
-    filter.type = "highpass";
-    filter.frequency.value = 5000;
-    gain.gain.setValueAtTime(0.045 * velocity, time);
-    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.04);
-    source.connect(filter);
-    filter.connect(gain);
-    gain.connect(dryGain);
-    source.start(time);
-    source.stop(time + 0.06);
   }
 
   function clampIndex(index) {
