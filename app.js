@@ -30,6 +30,7 @@
   var jamNextBeat = 0;
   var jamBeat = 0;
   var jamTimer = null;
+  var jamInterval = null;
   var jamTempo = 72;
 
   var notes = [
@@ -251,12 +252,13 @@
         return;
       }
 
-      ensureAudio();
-      jamOn = true;
-      jamRoot = 5;
-      updateJamButton();
-      startJam();
-      setStatus("Jam is playing around C4. Press any key to steer a new direction.");
+      unlockAudio(function () {
+        jamOn = true;
+        jamRoot = 5;
+        updateJamButton();
+        startJam();
+        setStatus("Jam is playing around C4. Press any key to steer a new direction.");
+      });
     };
 
     jamButton.onclick = function () {
@@ -264,18 +266,19 @@
         return;
       }
 
-      ensureAudio();
-      jamOn = !jamOn;
-      updateJamButton();
+      unlockAudio(function () {
+        jamOn = !jamOn;
+        updateJamButton();
 
-      if (jamOn) {
-        ensureJamRunning();
-        setStatus("Jam is playing. Press any key to steer a new direction.");
-      } else {
-        stopJam();
-        clearJamLead();
-        setStatus("Jam paused. Play freely with full piano polyphony.");
-      }
+        if (jamOn) {
+          startJam();
+          setStatus("Jam is playing. Press any key to steer a new direction.");
+        } else {
+          stopJam();
+          clearJamLead();
+          setStatus("Jam paused. Play freely with full piano polyphony.");
+        }
+      });
     };
 
     quietButton.onclick = function () {
@@ -309,8 +312,9 @@
       }
 
       heldKeys[code] = true;
-      ensureAudio();
-      playNote(item, 0.95, "user");
+      unlockAudio(function () {
+        playNote(item, 0.95, "user");
+      });
 
       if (e.preventDefault) {
         e.preventDefault();
@@ -430,8 +434,9 @@
     }
 
     touchNotes[touchId] = code;
-    ensureAudio();
-    playNote(item, 0.95, "user");
+    unlockAudio(function () {
+      playNote(item, 0.95, "user");
+    });
   }
 
   function endTouchNote(touchId) {
@@ -485,8 +490,9 @@
     var item = findNoteByCode(code);
 
     if (item && samplesReady) {
-      ensureAudio();
-      playNote(item, 0.95, "user");
+      unlockAudio(function () {
+        playNote(item, 0.95, "user");
+      });
     }
   }
 
@@ -505,6 +511,11 @@
     for (i = 0; i < notes.length; i += 1) {
       if (notes[i].code === code) {
         return notes[i];
+      }
+    }
+    for (i = 0; i < touchOnlyNotes.length; i += 1) {
+      if (touchOnlyNotes[i].code === code) {
+        return touchOnlyNotes[i];
       }
     }
     return null;
@@ -642,6 +653,50 @@
     }
   }
 
+  function unlockAudio(done) {
+    ensureAudio();
+    if (!audio) {
+      if (done) {
+        done();
+      }
+      return;
+    }
+
+    if (audio.state === "running") {
+      if (done) {
+        done();
+      }
+      return;
+    }
+
+    if (audio.resume) {
+      try {
+        var resumed = audio.resume();
+        if (resumed && resumed.then) {
+          resumed.then(function () {
+            if (done) {
+              done();
+            }
+          }, function () {
+            if (done) {
+              done();
+            }
+          });
+          return;
+        }
+      } catch (ignore) {
+      }
+    }
+
+    if (done) {
+      done();
+    }
+  }
+
+  function scheduleAt(when) {
+    return Math.max(when, audio.currentTime + 0.008);
+  }
+
   function updateMasterVolume() {
     var volume = parseInt(volumeControl.value, 10) / 100;
     if (master) {
@@ -663,7 +718,7 @@
   }
 
   function playNote(item, velocity, source, when) {
-    var at = when === undefined ? audio.currentTime : when;
+    var at = when === undefined ? audio.currentTime : scheduleAt(when);
 
     if (!audio || !master || !samplesReady) {
       return;
@@ -707,7 +762,7 @@
     filter.frequency.value = warmthCutoff();
     filter.Q.value = 0.35;
 
-    peak = source === "user" ? 0.78 : 0.42;
+    peak = source === "user" ? 0.78 : 0.55;
     peak *= velocity;
 
     gain.gain.setValueAtTime(0.0001, when);
@@ -886,15 +941,39 @@
   }
 
   function startJam() {
-    if (!audio || !samplesReady) {
+    if (!audio || !samplesReady || !jamOn) {
       return;
     }
 
     stopJam();
     jamBeat = 0;
-    jamNextBeat = audio.currentTime + 0.05;
+    jamNextBeat = audio.currentTime + 0.08;
     markJamLead(notes[jamRoot]);
-    scheduleJam();
+    jamInterval = window.setInterval(tickJam, 30);
+    tickJam();
+  }
+
+  function tickJam() {
+    var now;
+    var beatDuration;
+
+    if (!jamOn || !audio) {
+      stopJam();
+      return;
+    }
+
+    now = audio.currentTime;
+    beatDuration = 60 / jamTempo;
+
+    if (jamNextBeat < now - (beatDuration * 2)) {
+      jamNextBeat = now + 0.05;
+    }
+
+    while (jamNextBeat <= now + 0.03) {
+      playJamBeat(jamBeat, scheduleAt(jamNextBeat));
+      jamBeat += 1;
+      jamNextBeat += beatDuration;
+    }
   }
 
   function ensureJamRunning() {
@@ -902,15 +981,20 @@
       return;
     }
 
-    if (jamTimer === null) {
+    if (jamInterval === null) {
       if (jamNextBeat < audio.currentTime) {
         jamNextBeat = audio.currentTime + 0.05;
       }
-      scheduleJam();
+      jamInterval = window.setInterval(tickJam, 30);
+      tickJam();
     }
   }
 
   function stopJam() {
+    if (jamInterval !== null) {
+      window.clearInterval(jamInterval);
+      jamInterval = null;
+    }
     if (jamTimer !== null) {
       window.clearTimeout(jamTimer);
       jamTimer = null;
@@ -918,26 +1002,6 @@
     if (beatPulse) {
       beatPulse.className = "beat-pulse";
     }
-  }
-
-  function scheduleJam() {
-    var beatDuration = 60 / jamTempo;
-    var delayMs;
-    var now;
-
-    if (!jamOn || !audio) {
-      return;
-    }
-
-    now = audio.currentTime;
-    while (jamNextBeat <= now + 0.12) {
-      playJamBeat(jamBeat, jamNextBeat);
-      jamBeat += 1;
-      jamNextBeat += beatDuration;
-    }
-
-    delayMs = Math.max(20, (jamNextBeat - audio.currentTime) * 1000 - 30);
-    jamTimer = window.setTimeout(scheduleJam, delayMs);
   }
 
   function playJamBeat(beat, time) {
